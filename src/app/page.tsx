@@ -49,14 +49,14 @@ const VideoCard = ({ video, onSelect }: { video: VideoInfo; onSelect: () => void
           className="w-full h-full object-cover"
         />
       </div>
-      <div className="p-4">
-        <h2 className="text-xl font-semibold mb-2">{video.title}</h2>
-        <div className="flex items-center text-sm text-gray-500 mb-2">
+      <div className="p-3 sm:p-4">
+        <h2 className="text-lg sm:text-xl font-semibold mb-2 line-clamp-2">{video.title}</h2>
+        <div className="flex items-center text-xs sm:text-sm text-gray-500 mb-2">
           <span>{video.views} views</span>
           <span className="mx-2">•</span>
           <span>{new Date(video.publishedAt).toLocaleDateString()}</span>
         </div>
-        <p className="text-gray-600 mb-4 line-clamp-3">{video.description}</p>
+        <p className="text-sm sm:text-base text-gray-600 mb-4 line-clamp-3">{video.description}</p>
         <Button onClick={onSelect} className="w-full">
           Chat about this video
         </Button>
@@ -151,18 +151,18 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-[80vh] flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Chat about: {video.title}</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-[90vh] sm:h-[80vh] flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex justify-between items-center">
+          <h2 className="text-base sm:text-lg font-semibold truncate">Chat about: {video.title}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700"
           >
-            <XMarkIcon className="h-6 w-6" />
+            <XMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -171,7 +171,7 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
               }`}
             >
               <div
-                className={`max-w-[80%] rounded-lg p-3 ${
+                className={`max-w-[85%] sm:max-w-[80%] rounded-lg p-2 sm:p-3 ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-900'
@@ -183,7 +183,7 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 rounded-lg p-3">
+              <div className="bg-gray-100 rounded-lg p-2 sm:p-3">
                 <div className="flex space-x-2">
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
@@ -194,8 +194,8 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
           )}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={handleSubmit} className="p-4 border-t">
-          <div className="flex space-x-4">
+        <form onSubmit={handleSubmit} className="p-3 sm:p-4 border-t">
+          <div className="flex space-x-2 sm:space-x-4">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -236,13 +236,12 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Update the useEffect for handling videoId
+  // Handle video URL from query parameters
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const videoId = searchParams.get('videoId');
     
     if (videoId) {
-      // Validate video ID format
       if (/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
         const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
         setUrl(youtubeUrl);
@@ -480,7 +479,7 @@ export default function Home() {
       )}
 
       {/* Navigation Bar */}
-      <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm py-3 px-6 relative z-10">
+      <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm py-3 px-4 sm:px-6 relative z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center">
             <Image
@@ -493,11 +492,9 @@ export default function Home() {
             <span className="text-[18px] font-bold text-black tracking-tight">ChatPye</span>
           </div>
           
-          {authLoading ? (
-            <div className="h-8 w-20 bg-gray-200 animate-pulse rounded-lg" />
-          ) : user ? (
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-[#666666]">{user.displayName}</span>
+          {user ? (
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <span className="text-sm text-[#666666] hidden sm:inline">{user.displayName}</span>
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -508,7 +505,7 @@ export default function Home() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -533,15 +530,8 @@ export default function Home() {
         {/* Search Bar */}
         <div className="w-full border-b border-gray-200 bg-white/80 backdrop-blur-sm py-4 relative z-10">
           <div className="max-w-7xl mx-auto px-4">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="shrink-0 rounded-lg hover:bg-gray-100">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="shrink-0 rounded-lg hover:bg-gray-100">
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-              
-              <div className="flex-1 flex items-center bg-white border border-gray-200 rounded-full px-4 py-2">
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="w-full flex items-center bg-white border border-gray-200 rounded-full px-4 py-2">
                 <Search className="h-4 w-4 text-[#666666] mr-2" />
                 <Input
                   type="text"
@@ -554,7 +544,7 @@ export default function Home() {
               </div>
               
               <Button 
-                className="shrink-0 rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+                className="w-full sm:w-auto rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                 onClick={() => handleUrlSubmit()}
                 disabled={isLoading}
               >
@@ -565,223 +555,41 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 max-w-7xl mx-auto w-full p-6 flex gap-6 relative z-10">
+        <div className="flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 flex flex-col lg:flex-row gap-6 relative z-10">
           {/* Video Player Column */}
           <div className="flex-1 flex flex-col gap-6">
             {/* Video Player Card */}
-            <Card className="overflow-hidden bg-white p-4">
+            <Card className="overflow-hidden bg-white p-2 sm:p-4">
               <div className="aspect-video bg-black relative rounded-lg">
                 {url ? (
                   <VideoPlayer src={url} />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <h2 className="text-[20px] font-medium text-black mb-2">Welcome to ChatPye</h2>
-                    <p className="text-[16px] text-[#666666]">Your AI-powered video learning companion</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                    <h2 className="text-[18px] sm:text-[20px] font-medium text-black mb-2">Welcome to ChatPye</h2>
+                    <p className="text-[14px] sm:text-[16px] text-[#666666]">Your AI-powered video learning companion</p>
                   </div>
                 )}
               </div>
             </Card>
 
-            {/* Video Info Card */}
+            {/* Video Info */}
             {videoInfo && (
-              <Card className="bg-white p-6">
-                <h2 className="text-lg font-medium font-['Clarendon_Blk_BT'] text-[#1a1a1a] mb-4">
-                  {videoInfo.title}
-                </h2>
-                
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex mb-2">
-                    <span className="text-[#666666] font-medium">
-                      {videoInfo.views} views - {videoInfo.publishedAt}
-                    </span>
-                  </div>
-                  <p className="text-sm text-[#666666] line-clamp-3">
-                    {videoInfo.description}
-                  </p>
-                </div>
-              </Card>
-            )}
-
-            {/* Recommended Videos Card */}
-            {videoInfo && (
-              <Card className="bg-white p-6">
-                <h3 className="text-lg font-medium text-[#1a1a1a] mb-4">Recommended Videos</h3>
-                <div className="space-y-4">
-                  {/* Placeholder for recommended videos */}
-                  <div className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <div className="w-40 h-24 bg-gray-200 rounded-lg"></div>
-                    <div className="flex-1">
-                      <h4 className="font-medium text-[#1a1a1a] mb-1">Loading recommendations...</h4>
-                      <p className="text-sm text-[#666666]">Coming soon</p>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {isProcessingVideo && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-md">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#8b5cf6] mx-auto mb-4"></div>
-                  <p className="text-[#1a1a1a] font-medium mb-2">{processingStatus}</p>
-                  <p className="text-sm text-[#666666]">This may take a few moments. You'll be able to ask questions once processing is complete.</p>
-                </div>
-              </div>
+              <VideoCard
+                video={videoInfo}
+                onSelect={() => setShowChat(true)}
+              />
             )}
           </div>
-          
-          {/* Chat Interface Column */}
-          <div className="w-[420px] shrink-0">
-            <Card className="h-full flex flex-col bg-white p-4">
-              <Tabs defaultValue="chat" className="flex-1 flex flex-col">
-                <div className="p-6 border-b border-gray-200">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-[#666666]">Gemini</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full">
-                          <Settings className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" className="rounded-lg hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
-                      <span className="mr-1">+</span> New Chat
-                    </Button>
-                  </div>
-                  
-                  <h1 className="text-2xl font-semibold text-center font-['Space_Grotesk'] text-[#1a1a1a] tracking-tight">ChatPye</h1>
-                  <p className="text-center text-sm text-[#666666] mt-1">Your Personal AI Tutor for Video Learning</p>
-                </div>
 
-                <div className="px-6 py-4">
-                  <div className="grid grid-cols-4 gap-1">
-                    <Button variant="outline" className="rounded-l-lg rounded-r-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
-                      <MessageCircle className="h-4 w-4" />
-                      <span className="text-xs">Chat</span>
-                    </Button>
-                    <Button variant="outline" className="rounded-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
-                      <History className="h-4 w-4" />
-                      <span className="text-xs">Timeline</span>
-                    </Button>
-                    <Button variant="outline" className="rounded-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
-                      <FileCog className="h-4 w-4" />
-                      <span className="text-xs">Copy</span>
-                    </Button>
-                    <Button variant="outline" className="rounded-l-none rounded-r-lg h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
-                      <BookOpen className="h-4 w-4" />
-                      <span className="text-xs">Notes</span>
-                    </Button>
-                  </div>
-                </div>
-
-                <TabsContent value="chat" className="flex-1 flex flex-col">
-                  {/* Description */}
-                  <div className="p-6 text-center text-[#666666] text-sm">
-                    <p>An AI Tutor that helps you get contextual, accurate answers from videos in realtime. You can ask specific questions, copy code or text on screen and get accurate answers.</p>
-                  </div>
-
-                  {/* Example section - always show template prompts */}
-                  <div className="px-6 py-4">
-                    <p className="text-sm text-[#666666] mb-3">Try an example:</p>
-                    
-                    <div className="space-y-3">
-                      {examplePrompts.map((prompt, index) => (
-                        <Button
-                          key={index}
-                          variant="outline"
-                          className="w-full justify-start text-left h-auto py-3 rounded-lg hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]"
-                          onClick={() => handleTemplateClick(prompt)}
-                        >
-                          <span className="text-[#666666] mr-2">→</span>
-                          <span className="truncate">{prompt}</span>
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={chatContainerRef}>
-                    <div className="space-y-4">
-                      {messages.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${
-                            message.role === 'user' ? 'justify-end' : 'justify-start'
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[80%] rounded-lg p-3 ${
-                              message.role === 'user'
-                                ? 'bg-[#8b5cf6] text-white'
-                                : 'bg-gray-100 text-[#1a1a1a]'
-                            }`}
-                          >
-                            {renderMessage(message)}
-                            {isLoading && index === messages.length - 1 && message.role === 'assistant' && (
-                              <div className="flex space-x-1 mt-2">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </div>
-
-                  {/* Input area */}
-                  <div className="mt-auto border-t border-gray-200 p-6">
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        type="text" 
-                        placeholder="Chat with video..."
-                        className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666] select-text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && inputMessage.trim() && hasVideo) {
-                            handleSendMessage(inputMessage);
-                          }
-                        }}
-                        disabled={!hasVideo || isLoading}
-                      />
-                      <Button 
-                        size="icon" 
-                        className="rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
-                        onClick={() => handleSendMessage(inputMessage)}
-                        disabled={!hasVideo || isLoading || !inputMessage.trim()}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="timeline" className="flex-1 p-6">
-                  <div className="flex items-center justify-center h-full text-[#666666]">
-                    <Clock className="h-8 w-8 mr-2" />
-                    Timeline coming soon...
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="copy" className="flex-1 p-6">
-                  <div className="flex items-center justify-center h-full text-[#666666]">
-                    <Copy className="h-8 w-8 mr-2" />
-                    Copy feature coming soon...
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="notes" className="flex-1 p-6">
-                  <div className="flex items-center justify-center h-full text-[#666666]">
-                    <FileText className="h-8 w-8 mr-2" />
-                    Notes feature coming soon...
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </Card>
-          </div>
+          {/* Chat Interface */}
+          {showChat && videoInfo && (
+            <div className="fixed inset-0 z-50 lg:relative lg:z-0">
+              <ChatInterface
+                video={videoInfo}
+                onClose={() => setShowChat(false)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
