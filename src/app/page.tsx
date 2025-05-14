@@ -22,7 +22,6 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  isStreaming?: boolean;
 }
 
 const examplePrompts = [
@@ -41,81 +40,26 @@ interface VideoInfo {
 }
 
 const VideoCard = ({ video, onSelect }: { video: VideoInfo; onSelect: () => void }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<string>('');
-  const [error, setError] = useState<string>('');
-
-  useEffect(() => {
-    const processVideo = async () => {
-      try {
-        setIsLoading(true);
-        setError('');
-        
-        const response = await fetch('/api/process-video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtubeUrl: video.url })
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to process video');
-        }
-
-        const data = await response.json();
-        setAnalysis(data.initialAnalysis || '');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to process video');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    processVideo();
-  }, [video.url]);
-
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
-      <div className="flex items-start space-x-4">
-        <div className="flex-shrink-0">
-          <img
-            src={`https://img.youtube.com/vi/${video.id}/mqdefault.jpg`}
-            alt={video.title}
-            className="w-32 h-24 object-cover rounded"
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 truncate">
-            {video.title}
-          </h3>
-          <p className="text-sm text-gray-500 mt-1">
-            {video.views} views • {new Date(video.publishedAt).toLocaleDateString()}
-          </p>
-          <p className="text-sm text-gray-600 mt-2 line-clamp-2">
-            {video.description}
-          </p>
-          {isLoading && (
-            <div className="mt-2 flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-              <span className="text-sm text-gray-500">Analyzing video...</span>
-            </div>
-          )}
-          {error && (
-            <p className="text-sm text-red-500 mt-2">{error}</p>
-          )}
-          {analysis && !isLoading && (
-            <div className="mt-2">
-              <p className="text-sm text-gray-700 line-clamp-3">{analysis}</p>
-            </div>
-          )}
-        </div>
+    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="aspect-video relative">
+        <img
+          src={`https://img.youtube.com/vi/${video.id}/maxresdefault.jpg`}
+          alt={video.title}
+          className="w-full h-full object-cover"
+        />
       </div>
-      <div className="mt-4 flex justify-end">
-        <button
-          onClick={onSelect}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
+      <div className="p-4">
+        <h2 className="text-xl font-semibold mb-2">{video.title}</h2>
+        <div className="flex items-center text-sm text-gray-500 mb-2">
+          <span>{video.views} views</span>
+          <span className="mx-2">•</span>
+          <span>{new Date(video.publishedAt).toLocaleDateString()}</span>
+        </div>
+        <p className="text-gray-600 mb-4 line-clamp-3">{video.description}</p>
+        <Button onClick={onSelect} className="w-full">
           Chat about this video
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -162,44 +106,44 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
       if (!reader) throw new Error('No reader available');
 
       let assistantMessage = '';
-      const decoder = new TextDecoder();
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(Boolean);
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
 
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            if (data.type === 'loading') {
-              setMessages(prev => [...prev, { role: 'assistant' as const, content: 'Analyzing...' }]);
-            } else if (data.type === 'content') {
-              assistantMessage += data.content;
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage.role === 'assistant') {
-                  lastMessage.content = assistantMessage;
-                } else {
-                  newMessages.push({ role: 'assistant' as const, content: assistantMessage });
-                }
-                return newMessages;
-              });
-            } else if (data.type === 'error') {
-              throw new Error(data.content);
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                assistantMessage += parsed.content;
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[newMessages.length - 1].content = assistantMessage;
+                  return newMessages;
+                });
+              }
+            } catch (e) {
+              console.error('Error parsing chunk:', e);
             }
-          } catch (e) {
-            console.error('Error parsing chunk:', e);
           }
         }
       }
     } catch (error) {
+      console.error('Error:', error);
       setMessages(prev => [
         ...prev,
-        { role: 'assistant' as const, content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}` }
+        {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while processing your request.'
+        }
       ]);
     } finally {
       setIsLoading(false);
@@ -210,7 +154,7 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-[80vh] flex flex-col">
         <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-semibold truncate">{video.title}</h2>
+          <h2 className="text-lg font-semibold">Chat about: {video.title}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700"
@@ -239,9 +183,12 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 rounded-lg p-3 flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
-                <span>Analyzing...</span>
+              <div className="bg-gray-100 rounded-lg p-3">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                </div>
               </div>
             </div>
           )}
@@ -249,21 +196,16 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
         </div>
         <form onSubmit={handleSubmit} className="p-4 border-t">
           <div className="flex space-x-4">
-            <input
-              type="text"
+            <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask a question about the video..."
-              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
+              className="flex-1"
             />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button type="submit" disabled={isLoading || !input.trim()}>
               Send
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -274,12 +216,7 @@ const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => vo
 export default function Home() {
   const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth();
   const [url, setUrl] = useState('');
-  const [videoInfo, setVideoInfo] = useState<{
-    title: string;
-    description: string;
-    views: string;
-    publishedAt: string;
-  } | null>(null);
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -296,6 +233,8 @@ export default function Home() {
   const [showConnectionStatus, setShowConnectionStatus] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [showChat, setShowChat] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Update the useEffect for handling videoId
   useEffect(() => {
@@ -339,86 +278,56 @@ export default function Home() {
   const handleUrlSubmit = async (inputUrl?: string) => {
     const urlToProcess = inputUrl || url;
     if (!urlToProcess) return;
-    
-    // Add URL validation
-    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/;
-    if (!youtubeRegex.test(urlToProcess)) {
-      toast({
-        title: "Invalid URL",
-        description: "Please enter a valid YouTube URL",
-        variant: "destructive"
-      });
-      return;
-    }
-    
+
     setIsLoading(true);
-    setIsProcessingVideo(true);
-    setProcessingStatus('Initializing video processing...');
-    setVideoAnalysis(null);
-    setIsAnalysisComplete(false);
-    
+    setError(null);
+
     try {
-      // Process video with transcript detection
-      const processResponse = await fetch(`${window.location.origin}/api/process-video`, {
+      const response = await fetch('/api/process-video', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ youtubeUrl: urlToProcess }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl: urlToProcess })
       });
 
-      const processData = await processResponse.json();
-      
-      // Set video info regardless of analysis status
-      if (processData.videoInfo) {
-        setVideoInfo(processData.videoInfo);
-        setHasVideo(true);
-        setCurrentVideoUrl(urlToProcess);
-        setIsChatActive(true);
-        setMessages([]); // Clear previous messages
+      if (!response.ok) {
+        throw new Error('Failed to process video');
       }
 
-      if (!processResponse.ok) {
-        throw new Error(processData.error || 'Failed to process video');
-      }
+      const data = await response.json();
       
-      if (processData.error) {
-        throw new Error(processData.error);
+      if (data.error) {
+        throw new Error(data.error);
       }
+
+      // Extract video ID from URL
+      const videoId = urlToProcess.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/)?.[1];
       
-      // Handle analysis if available
-      if (processData.initialAnalysis) {
-        setVideoAnalysis(processData.initialAnalysis);
-        setIsAnalysisComplete(true);
-        
-        // Add initial analysis to chat
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\n${
-            processData.hasTranscript 
-              ? "This video has a transcript available, so I can provide more detailed answers to your questions."
-              : "Note: This video doesn't have a transcript available, so my analysis is based on the video's metadata."
-          }\n\nI'm ready to answer your questions about this video!`
-        }]);
+      if (!videoId) {
+        throw new Error('Invalid YouTube URL');
       }
+
+      setVideoInfo({
+        id: videoId,
+        title: data.videoInfo.title,
+        description: data.videoInfo.description,
+        views: data.videoInfo.views,
+        publishedAt: data.videoInfo.publishedAt,
+        url: urlToProcess
+      });
 
       toast({
-        title: "Video processed!",
-        description: processData.hasTranscript 
-          ? "You can now ask detailed questions about the video."
-          : "You can ask questions about the video's metadata.",
+        title: "Video processed successfully",
+        description: "You can now chat about this video",
       });
-    } catch (error) {
-      console.error('Error processing video:', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process video');
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to process video. Please try again.",
+        description: err instanceof Error ? err.message : 'Failed to process video',
         variant: "destructive"
       });
     } finally {
       setIsLoading(false);
-      setIsProcessingVideo(false);
-      setProcessingStatus('');
     }
   };
 
