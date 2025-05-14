@@ -581,9 +581,162 @@ export default function Home() {
             )}
           </div>
 
-          {/* Chat Interface */}
+          {/* Sidebar Chat - Hidden on mobile */}
+          <div className="hidden lg:block w-[420px] shrink-0">
+            <Card className="h-full flex flex-col bg-white p-4">
+              <Tabs defaultValue="chat" className="flex-1 flex flex-col">
+                <div className="p-6 border-b border-gray-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-[#666666]">Gemini</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full">
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="rounded-lg hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
+                      <span className="mr-1">+</span> New Chat
+                    </Button>
+                  </div>
+                  
+                  <h1 className="text-2xl font-semibold text-center font-['Space_Grotesk'] text-[#1a1a1a] tracking-tight">ChatPye</h1>
+                  <p className="text-center text-sm text-[#666666] mt-1">Your Personal AI Tutor for Video Learning</p>
+                </div>
+
+                <div className="px-6 py-4">
+                  <div className="grid grid-cols-4 gap-1">
+                    <Button variant="outline" className="rounded-l-lg rounded-r-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
+                      <MessageCircle className="h-4 w-4" />
+                      <span className="text-xs">Chat</span>
+                    </Button>
+                    <Button variant="outline" className="rounded-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
+                      <History className="h-4 w-4" />
+                      <span className="text-xs">Timeline</span>
+                    </Button>
+                    <Button variant="outline" className="rounded-none h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
+                      <FileCog className="h-4 w-4" />
+                      <span className="text-xs">Copy</span>
+                    </Button>
+                    <Button variant="outline" className="rounded-l-none rounded-r-lg h-auto py-3 flex flex-col items-center gap-2 hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]">
+                      <BookOpen className="h-4 w-4" />
+                      <span className="text-xs">Notes</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <TabsContent value="chat" className="flex-1 flex flex-col">
+                  {/* Description */}
+                  <div className="p-6 text-center text-[#666666] text-sm">
+                    <p>An AI Tutor that helps you get contextual, accurate answers from videos in realtime. You can ask specific questions, copy code or text on screen and get accurate answers.</p>
+                  </div>
+
+                  {/* Example section - always show template prompts */}
+                  <div className="px-6 py-4">
+                    <p className="text-sm text-[#666666] mb-3">Try an example:</p>
+                    
+                    <div className="space-y-3">
+                      {examplePrompts.map((prompt, index) => (
+                        <Button
+                          key={index}
+                          variant="outline"
+                          className="w-full justify-start text-left h-auto py-3 rounded-lg hover:bg-gray-100 border-[#a78bfa] hover:border-[#8b5cf6]"
+                          onClick={() => handleTemplateClick(prompt)}
+                        >
+                          <span className="text-[#666666] mr-2">→</span>
+                          <span className="truncate">{prompt}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Messages */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={chatContainerRef}>
+                    <div className="space-y-4">
+                      {messages.map((message, index) => (
+                        <div
+                          key={index}
+                          className={`flex ${
+                            message.role === 'user' ? 'justify-end' : 'justify-start'
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[80%] rounded-lg p-3 ${
+                              message.role === 'user'
+                                ? 'bg-[#8b5cf6] text-white'
+                                : 'bg-gray-100 text-[#1a1a1a]'
+                            }`}
+                          >
+                            {renderMessage(message)}
+                            {isLoading && index === messages.length - 1 && message.role === 'assistant' && (
+                              <div className="flex space-x-1 mt-2">
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </div>
+
+                  {/* Input area */}
+                  <div className="mt-auto border-t border-gray-200 p-6">
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        type="text" 
+                        placeholder="Chat with video..."
+                        className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666] select-text"
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && inputMessage.trim() && hasVideo) {
+                            handleSendMessage(inputMessage);
+                          }
+                        }}
+                        disabled={!hasVideo || isLoading}
+                      />
+                      <Button 
+                        size="icon" 
+                        className="rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+                        onClick={() => handleSendMessage(inputMessage)}
+                        disabled={!hasVideo || isLoading || !inputMessage.trim()}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="timeline" className="flex-1 p-6">
+                  <div className="flex items-center justify-center h-full text-[#666666]">
+                    <Clock className="h-8 w-8 mr-2" />
+                    Timeline coming soon...
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="copy" className="flex-1 p-6">
+                  <div className="flex items-center justify-center h-full text-[#666666]">
+                    <Copy className="h-8 w-8 mr-2" />
+                    Copy feature coming soon...
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="notes" className="flex-1 p-6">
+                  <div className="flex items-center justify-center h-full text-[#666666]">
+                    <FileText className="h-8 w-8 mr-2" />
+                    Notes feature coming soon...
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </Card>
+          </div>
+
+          {/* Mobile Chat Interface - Only shown on mobile */}
           {showChat && videoInfo && (
-            <div className="fixed inset-0 z-50 lg:relative lg:z-0">
+            <div className="lg:hidden fixed inset-0 z-50">
               <ChatInterface
                 video={videoInfo}
                 onClose={() => setShowChat(false)}
