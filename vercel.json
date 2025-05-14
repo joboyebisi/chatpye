@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "domains": ["app.chatpye.com"],
   "redirects": [
     {
       "source": "/",
