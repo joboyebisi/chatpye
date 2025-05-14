@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "domains": [
-    "chatpye.com",
-    "app.chatpye.com",
-    "chatpyeyoutube.com"
-  ],
   "redirects": [
     {
       "source": "https://chatpye.com",
