@@ -2,28 +2,47 @@
   "version": 2,
   "redirects": [
     {
-      "source": "https://chatpye.com",
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "chatpye.com"
+        }
+      ],
       "destination": "https://app.chatpye.com",
       "permanent": true
     },
     {
-      "source": "https://chatpyeyoutube.com",
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "chatpyeyoutube.com"
+        }
+      ],
       "destination": "https://app.chatpye.com",
       "permanent": true
     },
     {
-      "source": "http://chatpye.com",
-      "destination": "https://app.chatpye.com",
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "chatpye.com"
+        }
+      ],
+      "destination": "https://app.chatpye.com/:path*",
       "permanent": true
     },
     {
-      "source": "http://app.chatpye.com",
-      "destination": "https://app.chatpye.com",
-      "permanent": true
-    },
-    {
-      "source": "http://chatpyeyoutube.com",
-      "destination": "https://app.chatpye.com",
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "chatpyeyoutube.com"
+        }
+      ],
+      "destination": "https://app.chatpye.com/:path*",
       "permanent": true
     }
   ],
