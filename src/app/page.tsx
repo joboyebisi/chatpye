@@ -47,17 +47,25 @@ const VideoCard = ({ video, onSelect }: { video: VideoInfo; onSelect: () => void
           src={`https://img.youtube.com/vi/${video.id}/maxresdefault.jpg`}
           alt={video.title}
           className="w-full h-full object-cover"
+          onError={(e) => {
+            // Fallback to hqdefault if maxresdefault fails
+            const target = e.target as HTMLImageElement;
+            target.src = `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`;
+          }}
         />
       </div>
-      <div className="p-3 sm:p-4">
-        <h2 className="text-lg sm:text-xl font-semibold mb-2 line-clamp-2">{video.title}</h2>
-        <div className="flex items-center text-xs sm:text-sm text-gray-500 mb-2">
-          <span>{video.views} views</span>
+      <div className="p-4">
+        <h2 className="text-lg font-semibold mb-2 line-clamp-2">{video.title}</h2>
+        <div className="flex items-center text-sm text-gray-500 mb-2">
+          <span>{video.views}</span>
           <span className="mx-2">•</span>
           <span>{new Date(video.publishedAt).toLocaleDateString()}</span>
         </div>
-        <p className="text-sm sm:text-base text-gray-600 mb-4 line-clamp-3">{video.description}</p>
-        <Button onClick={onSelect} className="w-full">
+        <p className="text-sm text-gray-600 mb-4 line-clamp-3">{video.description}</p>
+        <Button 
+          onClick={onSelect} 
+          className="w-full bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+        >
           Chat about this video
         </Button>
       </div>
@@ -280,7 +288,8 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
-    setHasVideo(false); // Reset video state
+    setHasVideo(false);
+    setCurrentVideoUrl('');
 
     try {
       const response = await fetch('/api/process-video', {
@@ -306,17 +315,20 @@ export default function Home() {
         throw new Error('Invalid YouTube URL');
       }
 
-      setVideoInfo({
+      // Ensure all required fields are present
+      const videoInfo = {
         id: videoId,
         title: data.videoInfo.title || 'Untitled Video',
         description: data.videoInfo.description || 'No description available',
         views: data.videoInfo.views || '0 views',
         publishedAt: data.videoInfo.publishedAt || new Date().toISOString(),
         url: urlToProcess
-      });
+      };
 
-      setHasVideo(true); // Enable chat after video is loaded
-      setCurrentVideoUrl(urlToProcess); // Set current video URL for chat
+      setVideoInfo(videoInfo);
+      setHasVideo(true);
+      setCurrentVideoUrl(urlToProcess);
+      setShowChat(true);
 
       toast({
         title: "Video processed successfully",
@@ -339,21 +351,17 @@ export default function Home() {
   };
 
   const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return;
+    if (!message.trim() || !hasVideo || !currentVideoUrl) return;
 
     // Add user message to chat
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
+    const userMessage: Message = { role: 'user', content: message };
+    setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
+    setIsLoading(true);
 
     try {
-      setIsLoading(true);
-
-      if (!currentVideoUrl) {
-        throw new Error('No video URL provided');
-      }
-
       // Make API call to analyze endpoint
-      const response = await fetch(`${window.location.origin}/api/analyze`, {
+      const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -384,14 +392,28 @@ export default function Home() {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        assistantMessage += chunk;
+        const lines = chunk.split('\n');
 
-        // Update the last message in chat
-        setMessages(prev => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = assistantMessage;
-          return newMessages;
-        });
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                assistantMessage += parsed.content;
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[newMessages.length - 1].content = assistantMessage;
+                  return newMessages;
+                });
+              }
+            } catch (e) {
+              console.error('Error parsing chunk:', e);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error:', error);
