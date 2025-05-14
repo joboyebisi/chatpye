@@ -16,6 +16,7 @@ import { ChatInput } from "@/components/chat-input";
 import { ChatMessage } from "@/components/chat-message";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from '@/components/ui/use-toast';
+import Image from 'next/image';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -116,34 +117,7 @@ export default function Home() {
     setIsAnalysisComplete(false);
     
     try {
-      // First, get video info
-      const response = await fetch(`${window.location.origin}/api/video-info`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ youtubeUrl: urlToProcess }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to process video');
-      }
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.details || data.error);
-      }
-
-      setVideoInfo(data);
-      setIsChatActive(true);
-      setMessages([]); // Clear previous messages when new video is loaded
-      setHasVideo(true);
-      setCurrentVideoUrl(urlToProcess);
-      
-      // Start processing with instant analysis
-      setProcessingStatus('Analyzing video content...');
+      // Process video with transcript detection
       const processResponse = await fetch(`${window.location.origin}/api/process-video`, {
         method: 'POST',
         headers: {
@@ -153,10 +127,21 @@ export default function Home() {
       });
 
       if (!processResponse.ok) {
-        throw new Error('Failed to process video content');
+        const error = await processResponse.json();
+        throw new Error(error.error || 'Failed to process video');
       }
 
       const processData = await processResponse.json();
+      
+      if (processData.error) {
+        throw new Error(processData.error);
+      }
+
+      setVideoInfo(processData.videoInfo);
+      setIsChatActive(true);
+      setMessages([]); // Clear previous messages when new video is loaded
+      setHasVideo(true);
+      setCurrentVideoUrl(urlToProcess);
       
       // Store the analysis for future use
       setVideoAnalysis(processData.initialAnalysis);
@@ -166,16 +151,22 @@ export default function Home() {
       if (processData.initialAnalysis) {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\nI'm ready to answer your questions about this video!`
+          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\n${
+            processData.hasTranscript 
+              ? "This video has a transcript available, so I can provide more detailed answers to your questions."
+              : "Note: This video doesn't have a transcript available, so my analysis is based on the video's metadata."
+          }\n\nI'm ready to answer your questions about this video!`
         }]);
       }
 
       toast({
         title: "Video processed!",
-        description: "You can now ask questions about the video.",
+        description: processData.hasTranscript 
+          ? "You can now ask detailed questions about the video."
+          : "You can ask questions about the video's metadata.",
       });
     } catch (error) {
-      console.error('Error getting video info:', error);
+      console.error('Error processing video:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to process video. Please try again.",
@@ -206,20 +197,6 @@ export default function Home() {
       // Get the YouTube URL from the current video URL
       if (!currentVideoUrl) {
         throw new Error('No video URL provided. Please enter a YouTube URL first.');
-      }
-
-      // Check if we have cached analysis and the question is about general content
-      const generalQuestions = ['what is this video about', 'summarize', 'explain', 'overview', 'main points'];
-      const isGeneralQuestion = generalQuestions.some(q => message.toLowerCase().includes(q));
-      
-      if (isGeneralQuestion && videoAnalysis) {
-        // Use cached analysis for general questions
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `Based on my analysis:\n\n${videoAnalysis}`
-        }]);
-        setIsLoading(false);
-        return;
       }
 
       // Make API request for specific questions
@@ -371,6 +348,13 @@ export default function Home() {
       <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm py-3 px-6 relative z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center">
+            <Image
+              src="/logo.svg"
+              alt="ChatPye Logo"
+              width={32}
+              height={32}
+              className="mr-2"
+            />
             <span className="text-[18px] font-bold text-black tracking-tight">ChatPye</span>
           </div>
           
