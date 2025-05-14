@@ -1,86 +1,92 @@
 import { NextResponse } from 'next/server';
-import { analyzeVideo } from '@/lib/gemini';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getVideoInfo, extractVideoId } from '@/lib/youtube';
+
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: Request) {
   try {
     const { youtubeUrl, prompt } = await request.json();
 
-    // Validate required fields
     if (!youtubeUrl || !prompt) {
       return NextResponse.json(
-        { error: 'Missing required fields: youtubeUrl and prompt' },
+        { error: 'YouTube URL and prompt are required' },
         { status: 400 }
       );
     }
 
-    // Validate YouTube URL format
-    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/;
-    if (!youtubeRegex.test(youtubeUrl)) {
+    // Extract video ID
+    const videoId = extractVideoId(youtubeUrl);
+    if (!videoId) {
       return NextResponse.json(
-        { error: 'Invalid YouTube URL format' },
+        { error: 'Invalid YouTube URL' },
         { status: 400 }
       );
     }
 
-    // Log environment variable status
-    console.log('Environment variables status:');
-    console.log('GOOGLE_API_KEY:', process.env.GOOGLE_API_KEY ? 'Present' : 'Missing');
+    // Get video info, transcript, and vision analysis
+    const videoInfo = await getVideoInfo(videoId);
 
-    // Check for required API keys
-    if (!process.env.GOOGLE_API_KEY) {
-      console.error('Missing GOOGLE_API_KEY environment variable');
-      return NextResponse.json(
-        { error: 'Server configuration error: Missing API key' },
-        { status: 500 }
-      );
-    }
+    // Create a streaming response
+    const encoder = new TextEncoder();
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
 
-    try {
-      // Get streaming response from Gemini
-      const stream = await analyzeVideo(youtubeUrl, prompt);
-      
-      // Return the stream
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-        },
-      });
-    } catch (error: any) {
-      console.error('Error analyzing video:', error);
+    // Start the analysis in the background
+    (async () => {
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+        
+        const analysisPrompt = videoInfo.hasTranscript
+          ? `Analyze this YouTube video transcript based on the user's question:
+            Title: ${videoInfo.title}
+            Description: ${videoInfo.description}
+            Transcript: ${videoInfo.transcript}
+            
+            User's Question: ${prompt}
+            
+            Please provide a detailed analysis that:
+            1. Directly addresses the user's question
+            2. Uses specific examples from the transcript
+            3. Provides context and explanations
+            4. Maintains a professional but engaging tone`
+          : `Analyze this YouTube video based on the user's question:
+            Title: ${videoInfo.title}
+            Description: ${videoInfo.description}
+            Vision Analysis: ${videoInfo.visionAnalysis}
+            
+            User's Question: ${prompt}
+            
+            Please provide a detailed analysis that:
+            1. Directly addresses the user's question based on the video content analysis
+            2. Uses specific examples from the vision analysis
+            3. Provides context and explanations
+            4. Maintains a professional but engaging tone
+            Note: This analysis is based on video content analysis as no transcript is available.`;
 
-      // Handle specific error cases
-      if (error.message?.includes('rate limit')) {
-        return NextResponse.json(
-          { error: 'Rate limit exceeded. Please try again in a few minutes.' },
-          { status: 429 }
-        );
+        const result = await model.generateContent(analysisPrompt);
+        const analysis = result.response.text();
+        
+        await writer.write(encoder.encode(analysis));
+        await writer.close();
+      } catch (error) {
+        console.error('Error in analysis:', error);
+        await writer.write(encoder.encode('Error analyzing video. Please try again.'));
+        await writer.close();
       }
+    })();
 
-      if (error.message?.includes('Invalid YouTube URL')) {
-        return NextResponse.json(
-          { error: 'Invalid YouTube URL format. Please provide a valid YouTube video URL.' },
-          { status: 400 }
-        );
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/plain',
+        'Transfer-Encoding': 'chunked'
       }
-
-      // Return error response
-      return NextResponse.json(
-        { 
-          error: 'Error analyzing video',
-          details: error.message || 'Unknown error',
-          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        },
-        { status: 500 }
-      );
-    }
-  } catch (error: any) {
+    });
+  } catch (error) {
     console.error('Error in analyze route:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: error.message || 'Unknown error',
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      },
+      { error: 'Failed to analyze video' },
       { status: 500 }
     );
   }
