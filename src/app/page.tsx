@@ -17,6 +17,7 @@ import { ChatMessage } from "@/components/chat-message";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from '@/components/ui/use-toast';
 import Image from 'next/image';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -29,6 +30,246 @@ const examplePrompts = [
   "What are the highlights of this video",
   "Explain this video like I am 5"
 ];
+
+interface VideoInfo {
+  id: string;
+  title: string;
+  description: string;
+  views: string;
+  publishedAt: string;
+  url: string;
+}
+
+const VideoCard = ({ video, onSelect }: { video: VideoInfo; onSelect: () => void }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<string>('');
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    const processVideo = async () => {
+      try {
+        setIsLoading(true);
+        setError('');
+        
+        const response = await fetch('/api/process-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtubeUrl: video.url })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to process video');
+        }
+
+        const data = await response.json();
+        setAnalysis(data.initialAnalysis || '');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to process video');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    processVideo();
+  }, [video.url]);
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
+      <div className="flex items-start space-x-4">
+        <div className="flex-shrink-0">
+          <img
+            src={`https://img.youtube.com/vi/${video.id}/mqdefault.jpg`}
+            alt={video.title}
+            className="w-32 h-24 object-cover rounded"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-semibold text-gray-900 truncate">
+            {video.title}
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            {video.views} views • {new Date(video.publishedAt).toLocaleDateString()}
+          </p>
+          <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+            {video.description}
+          </p>
+          {isLoading && (
+            <div className="mt-2 flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+              <span className="text-sm text-gray-500">Analyzing video...</span>
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-red-500 mt-2">{error}</p>
+          )}
+          {analysis && !isLoading && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-700 line-clamp-3">{analysis}</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button
+          onClick={onSelect}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          Chat about this video
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ChatInterface = ({ video, onClose }: { video: VideoInfo; onClose: () => void }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userMessage: Message = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          youtubeUrl: video.url,
+          prompt: input
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No reader available');
+
+      let assistantMessage = '';
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(Boolean);
+
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.type === 'loading') {
+              setMessages(prev => [...prev, { role: 'assistant' as const, content: 'Analyzing...' }]);
+            } else if (data.type === 'content') {
+              assistantMessage += data.content;
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage.role === 'assistant') {
+                  lastMessage.content = assistantMessage;
+                } else {
+                  newMessages.push({ role: 'assistant' as const, content: assistantMessage });
+                }
+                return newMessages;
+              });
+            } else if (data.type === 'error') {
+              throw new Error(data.content);
+            }
+          } catch (e) {
+            console.error('Error parsing chunk:', e);
+          }
+        }
+      }
+    } catch (error) {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant' as const, content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}` }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-[80vh] flex flex-col">
+        <div className="p-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-semibold truncate">{video.title}</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`flex ${
+                message.role === 'user' ? 'justify-end' : 'justify-start'
+              }`}
+            >
+              <div
+                className={`max-w-[80%] rounded-lg p-3 ${
+                  message.role === 'user'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-900'
+                }`}
+              >
+                {message.content}
+              </div>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 rounded-lg p-3 flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
+                <span>Analyzing...</span>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 border-t">
+          <div className="flex space-x-4">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask a question about the video..."
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !input.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 export default function Home() {
   const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth();

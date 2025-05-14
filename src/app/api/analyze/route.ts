@@ -1,17 +1,36 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getVideoInfo, extractVideoId } from '@/lib/youtube';
 
-// Initialize Gemini with proper error handling
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not set in environment variables');
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+
+function extractVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/v\/([^&\n?#]+)/
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
 }
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 export async function POST(request: Request) {
   try {
+    // Check for API key
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is not set in environment variables' },
+        { status: 500 }
+      );
+    }
+
     const { youtubeUrl, prompt } = await request.json();
 
     if (!youtubeUrl || !prompt) {
@@ -30,74 +49,64 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get video info and transcript
-    const videoInfo = await getVideoInfo(videoId);
-
-    // Create a streaming response
+    // Create streaming response
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
     const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
-          
-          let result;
-          if (videoInfo.hasTranscript) {
-            // Use transcript for analysis
-            result = await model.generateContent(
-              `Based on the following video transcript and the user's question, provide a detailed response:
-              Title: ${videoInfo.title}
-              Description: ${videoInfo.description}
-              Transcript: ${videoInfo.transcript}
-              User Question: ${prompt}
-              
-              Please provide a comprehensive answer that:
-              1. Directly addresses the user's question
-              2. References specific parts of the transcript when relevant
-              3. Maintains a professional and helpful tone
-              4. Includes context and explanations where needed`
-            );
-          } else {
-            // Use direct YouTube URL analysis
-            result = await model.generateContent([
-              `Based on the video content, please answer the following question:\n${prompt}\n\nPlease provide a comprehensive answer that:\n1. Directly addresses the question\n2. References specific parts of the video when relevant\n3. Maintains a professional and helpful tone\n4. Includes context and explanations where needed`,
-              {
-                fileData: {
-                  fileUri: youtubeUrl,
-                  mimeType: 'video/youtube'
-                }
-              }
-            ]);
-          }
 
-          const response = result.response.text();
-          
-          // Send the response in chunks
-          const chunks = response.split('\n');
-          for (const chunk of chunks) {
-            controller.enqueue(encoder.encode(chunk + '\n'));
-            await new Promise(resolve => setTimeout(resolve, 50)); // Add small delay between chunks
+    // Start processing in the background
+    (async () => {
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        
+        // Send initial loading message
+        await writer.write(encoder.encode('{"type":"loading","content":"Analyzing video..."}\n'));
+
+        // Generate response
+        const result = await model.generateContent([
+          `You are a helpful AI assistant analyzing a YouTube video. The user asks: "${prompt}"\n\nPlease provide a detailed response that:\n1. Directly addresses the user's question\n2. References specific parts of the video when relevant\n3. Maintains a professional and educational tone\n4. Provides context and explanations\n5. Uses timestamps (MM:SS) when referring to specific moments\n\nVideo URL: ${youtubeUrl}`,
+          {
+            fileData: {
+              fileUri: youtubeUrl,
+              mimeType: 'video/youtube'
+            }
           }
-          
-          controller.close();
-        } catch (error) {
-          console.error('Error generating response:', error);
-          controller.enqueue(encoder.encode(`Error: ${error instanceof Error ? error.message : 'Failed to generate response. Please try again.'}`));
-          controller.close();
+        ]);
+
+        const response = result.response;
+        const text = response.text();
+
+        // Send the response in chunks
+        const chunkSize = 50;
+        for (let i = 0; i < text.length; i += chunkSize) {
+          const chunk = text.slice(i, i + chunkSize);
+          await writer.write(encoder.encode(`{"type":"content","content":"${chunk}"}\n`));
+          // Add a small delay between chunks for better streaming effect
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
-      }
-    });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked'
+        // Send completion message
+        await writer.write(encoder.encode('{"type":"done"}\n'));
+      } catch (error) {
+        console.error('Error generating response:', error);
+        await writer.write(encoder.encode(`{"type":"error","content":"Failed to generate response: ${error instanceof Error ? error.message : 'Unknown error'}"}\n`));
+      } finally {
+        await writer.close();
       }
+    })();
+
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (error) {
     console.error('Error in analyze route:', error);
     return NextResponse.json(
       { 
-        error: 'Failed to analyze video',
+        error: 'Failed to process request',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }

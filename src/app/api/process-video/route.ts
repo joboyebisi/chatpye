@@ -1,12 +1,28 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getVideoInfo, extractVideoId } from '@/lib/youtube';
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // Simple in-memory cache (replace with Redis or similar in production)
 const videoCache = new Map();
+
+function extractVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/v\/([^&\n?#]+)/
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
 
 export async function POST(request: Request) {
   try {
@@ -46,68 +62,58 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get video info and transcript
-    const videoInfo = await getVideoInfo(videoId);
+    // Get video info using Gemini
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // First, get video metadata
+    const metadataResult = await model.generateContent([
+      "Extract the title, description, view count, and publish date from this video. Format the response as JSON with these fields: title, description, views, publishedAt",
+      {
+        fileData: {
+          fileUri: youtubeUrl,
+          mimeType: 'video/youtube'
+        }
+      }
+    ]);
 
-    // Always return video info immediately
+    const videoInfo = JSON.parse(metadataResult.response.text());
+
+    // Return video info immediately
     const response = {
       status: 'processing',
-      message: videoInfo.hasTranscript 
-        ? 'Initial analysis complete using video transcript'
-        : 'Initial analysis complete using video content analysis',
-      hasTranscript: videoInfo.hasTranscript,
-      videoInfo: {
-        title: videoInfo.title,
-        description: videoInfo.description,
-        views: videoInfo.views,
-        publishedAt: videoInfo.publishedAt
-      }
+      message: 'Initial analysis in progress',
+      videoInfo,
+      hasTranscript: false
     };
 
     // Start analysis in the background
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
-      
-      let result;
-      if (videoInfo.hasTranscript) {
-        // Use transcript for analysis
-        result = await model.generateContent(
-          `Analyze this YouTube video transcript and provide key insights:
-          Title: ${videoInfo.title}
-          Description: ${videoInfo.description}
-          Transcript: ${videoInfo.transcript}
-          
-          Please provide:
-          1. Main topics covered
-          2. Key points
-          3. Technical concepts (if any)
-          4. Potential questions users might ask`
-        );
-      } else {
-        // Use direct YouTube URL analysis
-        result = await model.generateContent([
-          "Please analyze this video and provide key insights. Include:\n1. Main topics covered\n2. Key points\n3. Technical concepts (if any)\n4. Potential questions users might ask",
-          {
-            fileData: {
-              fileUri: youtubeUrl,
-              mimeType: 'video/youtube'
-            }
+      // Get detailed analysis
+      const analysisResult = await model.generateContent([
+        "Please analyze this video and provide key insights. Include:\n1. Main topics covered\n2. Key points\n3. Technical concepts (if any)\n4. Potential questions users might ask\n5. Whether this video has a transcript available",
+        {
+          fileData: {
+            fileUri: youtubeUrl,
+            mimeType: 'video/youtube'
           }
-        ]);
-      }
+        }
+      ]);
 
-      const analysis = result.response.text();
+      const analysis = analysisResult.response.text();
+      const hasTranscript = analysis.toLowerCase().includes('transcript available');
 
       // Cache the analysis
       videoCache.set(youtubeUrl, {
         ...response,
         initialAnalysis: analysis,
+        hasTranscript,
         timestamp: Date.now()
       });
 
       return NextResponse.json({
         ...response,
-        initialAnalysis: analysis
+        initialAnalysis: analysis,
+        hasTranscript
       });
     } catch (analysisError) {
       console.error('Error in analysis:', analysisError);
