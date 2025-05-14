@@ -713,7 +713,7 @@ export default function Home() {
                     <div className="flex items-center gap-2">
                       <Input 
                         type="text" 
-                        placeholder={hasVideo ? "Chat with video..." : "Process a video first..."}
+                        placeholder={hasVideo ? "Ask a question about the video..." : "Process a video first to start chatting"}
                         className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666] select-text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
@@ -735,7 +735,7 @@ export default function Home() {
                     </div>
                     {!hasVideo && (
                       <p className="text-sm text-[#666666] mt-2 text-center">
-                        Enter a YouTube URL above to start chatting
+                        Enter a YouTube URL in the search bar above to start chatting
                       </p>
                     )}
                   </div>
