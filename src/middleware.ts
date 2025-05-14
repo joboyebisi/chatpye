@@ -33,43 +33,10 @@ function extractVideoId(url: string): string | null {
 export function middleware(request: NextRequest) {
   const url = request.nextUrl;
   const hostname = request.headers.get('host') || '';
-  const path = url.pathname;
-  const search = url.search;
-
-  // Handle www subdomain first
-  if (hostname.startsWith('www.')) {
-    const newHostname = hostname.replace('www.', '');
-    return NextResponse.redirect(new URL(`https://${newHostname}${path}${search}`));
-  }
 
   // Handle HTTP to HTTPS
   if (url.protocol === 'http:') {
-    return NextResponse.redirect(new URL(`https://${hostname}${path}${search}`));
-  }
-
-  // Handle chatpye.com -> app.chatpye.com
-  if (hostname === 'chatpye.com') {
-    return NextResponse.redirect(new URL(`https://app.chatpye.com${path}${search}`));
-  }
-
-  // Handle chatpyeyoutube.com -> app.chatpye.com
-  if (hostname === 'chatpyeyoutube.com') {
-    // Check if there's a video ID in the URL
-    const videoId = extractVideoId(url.toString());
-    if (videoId) {
-      // Redirect to app.chatpye.com with the video ID
-      return NextResponse.redirect(new URL(`https://app.chatpye.com?videoId=${videoId}`));
-    }
-    // If no video ID, just redirect to main app
-    return NextResponse.redirect(new URL(`https://app.chatpye.com${path}${search}`));
-  }
-
-  // Handle direct YouTube URLs on app.chatpye.com
-  if (hostname === 'app.chatpye.com') {
-    const videoId = extractVideoId(url.toString());
-    if (videoId && !url.searchParams.has('videoId')) {
-      return NextResponse.redirect(new URL(`https://app.chatpye.com?videoId=${videoId}`));
-    }
+    return NextResponse.redirect(new URL(`https://${hostname}${url.pathname}${url.search}`));
   }
 
   return NextResponse.next();
