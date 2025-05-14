@@ -126,29 +126,31 @@ export default function Home() {
         body: JSON.stringify({ youtubeUrl: urlToProcess }),
       });
 
-      if (!processResponse.ok) {
-        const error = await processResponse.json();
-        throw new Error(error.error || 'Failed to process video');
+      const processData = await processResponse.json();
+      
+      // Set video info regardless of analysis status
+      if (processData.videoInfo) {
+        setVideoInfo(processData.videoInfo);
+        setHasVideo(true);
+        setCurrentVideoUrl(urlToProcess);
+        setIsChatActive(true);
+        setMessages([]); // Clear previous messages
       }
 
-      const processData = await processResponse.json();
+      if (!processResponse.ok) {
+        throw new Error(processData.error || 'Failed to process video');
+      }
       
       if (processData.error) {
         throw new Error(processData.error);
       }
-
-      setVideoInfo(processData.videoInfo);
-      setIsChatActive(true);
-      setMessages([]); // Clear previous messages when new video is loaded
-      setHasVideo(true);
-      setCurrentVideoUrl(urlToProcess);
       
-      // Store the analysis for future use
-      setVideoAnalysis(processData.initialAnalysis);
-      setIsAnalysisComplete(true);
-      
-      // Add initial analysis to chat
+      // Handle analysis if available
       if (processData.initialAnalysis) {
+        setVideoAnalysis(processData.initialAnalysis);
+        setIsAnalysisComplete(true);
+        
+        // Add initial analysis to chat
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\n${
