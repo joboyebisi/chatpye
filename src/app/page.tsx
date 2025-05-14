@@ -55,15 +55,24 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Add useEffect to handle videoId parameter
+  // Update the useEffect for handling videoId
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const videoId = searchParams.get('videoId');
     
     if (videoId) {
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      setUrl(youtubeUrl);
-      handleUrlSubmit(youtubeUrl);
+      // Validate video ID format
+      if (/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        setUrl(youtubeUrl);
+        handleUrlSubmit(youtubeUrl);
+      } else {
+        toast({
+          title: "Invalid Video ID",
+          description: "The provided video ID is not valid.",
+          variant: "destructive"
+        });
+      }
     }
   }, []);
 
