@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getVideoTranscript, cleanTranscript } from './youtube';
+import { db } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 if (!process.env.GOOGLE_API_KEY) {
   throw new Error('Missing GOOGLE_API_KEY environment variable');
@@ -20,82 +21,69 @@ async function handleRateLimit(error: any) {
   return false;
 }
 
-// Function to generate embeddings for text
-async function generateEmbeddings(text: string): Promise<number[]> {
+// Helper function to get video ID from URL
+function getVideoId(youtubeUrl: string): string | null {
+  const match = youtubeUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+  return match ? match[1] : null;
+}
+
+// Helper function to check cache
+async function checkCache(videoId: string, prompt: string): Promise<string | null> {
   try {
-    const model = genAI.getGenerativeModel({
-      model: 'embedding-001',
-      generationConfig: {
-        temperature: 0,
-      },
+    const cacheRef = doc(db, 'video_analysis', `${videoId}_${prompt}`);
+    const cacheDoc = await getDoc(cacheRef);
+    
+    if (cacheDoc.exists()) {
+      const data = cacheDoc.data();
+      // Check if cache is less than 24 hours old
+      const cacheAge = Date.now() - data.timestamp.toMillis();
+      if (cacheAge < 24 * 60 * 60 * 1000) {
+        return data.analysis;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error checking cache:', error);
+    return null;
+  }
+}
+
+// Helper function to save to cache
+async function saveToCache(videoId: string, prompt: string, analysis: string) {
+  try {
+    const cacheRef = doc(db, 'video_analysis', `${videoId}_${prompt}`);
+    await setDoc(cacheRef, {
+      analysis,
+      timestamp: new Date(),
+      videoId,
+      prompt
     });
-
-    const result = await model.embedContent(text);
-    return result.embedding.values;
   } catch (error) {
-    console.error('Error generating embeddings:', error);
-    throw error;
+    console.error('Error saving to cache:', error);
   }
-}
-
-// Function to find relevant context using semantic search
-async function findRelevantContext(question: string, transcript: string) {
-  try {
-    // Split transcript into chunks (e.g., by sentences or paragraphs)
-    const chunks = transcript.split(/[.!?]+/).filter(chunk => chunk.trim().length > 0);
-    
-    // Generate embedding for the question
-    const questionEmbedding = await generateEmbeddings(question);
-    
-    // Generate embeddings for each chunk
-    const chunkEmbeddings = await Promise.all(
-      chunks.map(chunk => generateEmbeddings(chunk))
-    );
-    
-    // Calculate cosine similarity between question and each chunk
-    const similarities = chunkEmbeddings.map((embedding, index) => ({
-      chunk: chunks[index],
-      similarity: cosineSimilarity(questionEmbedding, embedding)
-    }));
-    
-    // Sort by similarity and return top chunks
-    return similarities
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 3)
-      .map(item => item.chunk)
-      .join(' ');
-  } catch (error) {
-    console.error('Error finding relevant context:', error);
-    throw error;
-  }
-}
-
-// Helper function to calculate cosine similarity
-function cosineSimilarity(vecA: number[], vecB: number[]) {
-  const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
-  const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
-  const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
-  return dotProduct / (magnitudeA * magnitudeB);
 }
 
 export async function analyzeVideo(youtubeUrl: string, prompt: string) {
-  // Extract video ID from URL
-  const videoId = youtubeUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/)?.[1];
-
-  if (!videoId) {
-    throw new Error('Invalid YouTube URL');
-  }
-
   try {
-    // First, get the video transcript
-    const transcript = await getVideoTranscript(youtubeUrl);
-    
-    // Find relevant context for the question
-    const relevantContext = await findRelevantContext(prompt, transcript);
-    
+    const videoId = getVideoId(youtubeUrl);
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL');
+    }
+
+    // Check cache first
+    const cachedAnalysis = await checkCache(videoId, prompt);
+    if (cachedAnalysis) {
+      console.log('Using cached analysis');
+      const stream = new TransformStream();
+      const writer = stream.writable.getWriter();
+      await writer.write(new TextEncoder().encode(cachedAnalysis));
+      await writer.close();
+      return stream.readable;
+    }
+
     // Get the Gemini Pro model with correct configuration
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-pro',
       generationConfig: {
         temperature: 0.7,
         topK: 40,
@@ -107,6 +95,7 @@ export async function analyzeVideo(youtubeUrl: string, prompt: string) {
     // Create a streaming response
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    let fullAnalysis = '';
 
     // Start the analysis in the background
     (async () => {
@@ -116,11 +105,7 @@ export async function analyzeVideo(youtubeUrl: string, prompt: string) {
             role: 'user',
             parts: [
               {
-                text: `You are an AI tutor analyzing a YouTube video. Here is the relevant context from the video transcript:
-
-${relevantContext}
-
-Please provide a detailed response to the following question: ${prompt}
+                text: `You are an AI tutor analyzing a YouTube video. Please analyze the following video and provide a detailed response to: ${prompt}
                 
 Guidelines:
 - Be concise but informative
@@ -129,6 +114,12 @@ Guidelines:
 - Format code blocks with proper syntax highlighting
 - If you're unsure about something, acknowledge it
 - Keep the response focused on the video content`
+              },
+              {
+                fileData: {
+                  fileUri: youtubeUrl,
+                  mimeType: 'video/mp4'
+                }
               }
             ]
           }]
@@ -137,51 +128,22 @@ Guidelines:
         for await (const chunk of result.stream) {
           const text = chunk.text();
           if (text) {
+            fullAnalysis += text;
             await writer.write(new TextEncoder().encode(text));
           }
         }
-      } catch (error) {
-        console.error('Detailed Gemini error:', error);
+
+        // Save to cache after successful analysis
+        await saveToCache(videoId, prompt, fullAnalysis);
+      } catch (error: any) {
+        console.error('Error in Gemini analysis:', error);
         
         // Handle rate limits
-        if (await handleRateLimit(error)) {
-          // Retry the request
-          try {
-            const result = await model.generateContentStream({
-              contents: [{
-                role: 'user',
-                parts: [
-                  {
-                    text: `You are an AI tutor analyzing a YouTube video. Here is the relevant context from the video transcript:
-
-${relevantContext}
-
-Please provide a detailed response to the following question: ${prompt}
-                    
-Guidelines:
-- Be concise but informative
-- Use bullet points for key points
-- Include timestamps if relevant
-- Format code blocks with proper syntax highlighting
-- If you're unsure about something, acknowledge it
-- Keep the response focused on the video content`
-                  }
-                ]
-              }]
-            });
-
-            for await (const chunk of result.stream) {
-              const text = chunk.text();
-              if (text) {
-                await writer.write(new TextEncoder().encode(text));
-              }
-            }
-          } catch (retryError) {
-            console.error('Error on retry:', retryError);
-            await writer.write(new TextEncoder().encode('Sorry, I encountered an error while analyzing the video. Please try again in a few moments.'));
-          }
+        if (error.message?.includes('rate limit')) {
+          await writer.write(new TextEncoder().encode('Rate limit exceeded. Please try again in a few minutes.'));
         } else {
-          await writer.write(new TextEncoder().encode('Sorry, I encountered an error while analyzing the video. Please try again.'));
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          await writer.write(new TextEncoder().encode(`Error: ${errorMessage}`));
         }
       } finally {
         await writer.close();

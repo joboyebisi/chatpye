@@ -64,6 +64,17 @@ export default function Home() {
     const urlToProcess = inputUrl || url;
     if (!urlToProcess) return;
     
+    // Add URL validation
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/;
+    if (!youtubeRegex.test(urlToProcess)) {
+      toast({
+        title: "Invalid URL",
+        description: "Please enter a valid YouTube URL",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setIsLoading(true);
     try {
       // First, get video info
@@ -75,10 +86,15 @@ export default function Home() {
         body: JSON.stringify({ youtubeUrl: urlToProcess }),
       });
 
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || 'Failed to process video');
+      }
+
       const data = await response.json();
       
       if (data.error) {
-        throw new Error(data.error);
+        throw new Error(data.details || data.error);
       }
 
       setVideoInfo(data);
@@ -94,7 +110,7 @@ export default function Home() {
       console.error('Error getting video info:', error);
       toast({
         title: "Error",
-        description: "Failed to process video. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to process video. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -111,82 +127,82 @@ export default function Home() {
 
     // Add user message to chat
     setMessages(prev => [...prev, { role: 'user', content: message }]);
-    setIsLoading(true);
+    setInputMessage('');
 
     try {
-      if (!hasVideo) {
-        // Process video URL
-        const response = await fetch('/api/video-info', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ youtubeUrl: message })
-        });
+      // Show loading state
+      setIsLoading(true);
 
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Failed to process video');
-        }
-
-        const data = await response.json();
-        setHasVideo(true);
-        setCurrentVideoUrl(message);
-        toast({
-          title: "Video processed!",
-          description: "You can now ask questions about the video.",
-        });
-      } else {
-        // Handle chat message
-        const response = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            youtubeUrl: currentVideoUrl,
-            prompt: message
-          })
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Failed to get response');
-        }
-
-        // Add initial assistant message
-        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('No response stream');
-
-        let assistantMessage = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const text = new TextDecoder().decode(value);
-          assistantMessage += text;
-          
-          // Update the last message with the new content
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.content = assistantMessage;
-            }
-            return [...newMessages];
-          });
-        }
+      // Get the YouTube URL from the current video URL
+      if (!currentVideoUrl) {
+        throw new Error('No video URL provided. Please enter a YouTube URL first.');
       }
-    } catch (error) {
+
+      // Make API request
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          youtubeUrl: currentVideoUrl,
+          prompt: message,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze video');
+      }
+
+      // Create a new message for the assistant's response
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: '',
+      };
+
+      // Add the message to the chat
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // Read the stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+      // Read the stream
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Convert the chunk to text
+        const text = new TextDecoder().decode(value);
+        
+        // Update the assistant's message
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage.role === 'assistant') {
+            lastMessage.content += text;
+          }
+          return newMessages;
+        });
+      }
+    } catch (error: any) {
       console.error('Error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      
+      // Show error toast
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to analyze video',
+        variant: 'destructive',
+      });
+
+      // Add error message to chat
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Error: ${errorMessage}`
+        content: `I apologize, but I encountered an error: ${error.message || 'Failed to analyze video'}. Please try again or try a different video.`
       }]);
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive"
-      });
     } finally {
       setIsLoading(false);
     }
