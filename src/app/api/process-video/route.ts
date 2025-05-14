@@ -65,9 +65,21 @@ export async function POST(request: Request) {
     // Get video info using Gemini
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
-    // First, get video metadata
+    // First, get video metadata with a more specific prompt
     const metadataResult = await model.generateContent([
-      "Extract the title, description, view count, and publish date from this video. Format the response as JSON with these fields: title, description, views, publishedAt",
+      `Extract the following information from this YouTube video (${youtubeUrl}):
+      1. Title: The exact video title
+      2. Description: The full video description
+      3. Views: The view count in a readable format (e.g., "1.2M views")
+      4. PublishedAt: The publish date in ISO format
+      
+      Format the response as a JSON object with these exact fields:
+      {
+        "title": "string",
+        "description": "string",
+        "views": "string",
+        "publishedAt": "string"
+      }`,
       {
         fileData: {
           fileUri: youtubeUrl,
@@ -76,7 +88,22 @@ export async function POST(request: Request) {
       }
     ]);
 
-    const videoInfo = JSON.parse(metadataResult.response.text());
+    let videoInfo;
+    try {
+      const responseText = metadataResult.response.text();
+      videoInfo = JSON.parse(responseText);
+      
+      // Validate required fields
+      if (!videoInfo.title || !videoInfo.description || !videoInfo.views || !videoInfo.publishedAt) {
+        throw new Error('Missing required video information');
+      }
+    } catch (parseError) {
+      console.error('Error parsing video metadata:', parseError);
+      return NextResponse.json(
+        { error: 'Failed to extract video information' },
+        { status: 500 }
+      );
+    }
 
     // Return video info immediately
     const response = {
@@ -88,9 +115,16 @@ export async function POST(request: Request) {
 
     // Start analysis in the background
     try {
-      // Get detailed analysis
+      // Get detailed analysis with a more structured prompt
       const analysisResult = await model.generateContent([
-        "Please analyze this video and provide key insights. Include:\n1. Main topics covered\n2. Key points\n3. Technical concepts (if any)\n4. Potential questions users might ask\n5. Whether this video has a transcript available",
+        `Analyze this YouTube video (${youtubeUrl}) and provide a structured response:
+        1. Main Topics: List the main topics covered
+        2. Key Points: List the most important points
+        3. Technical Concepts: List any technical terms or concepts discussed
+        4. Potential Questions: List common questions viewers might have
+        5. Transcript Status: Indicate if a transcript is available
+        
+        Format the response in a clear, structured way.`,
         {
           fileData: {
             fileUri: youtubeUrl,
