@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Send, Search, MessageSquare, ArrowLeft, ArrowRight, RefreshCw, Clock, Copy, FileText, MessageCircle, History, FileCog, BookOpen, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -47,6 +47,10 @@ export default function Home() {
   const [hasVideo, setHasVideo] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');
   const { toast } = useToast();
+  const [isProcessingVideo, setIsProcessingVideo] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Add useEffect to handle videoId parameter
   useEffect(() => {
@@ -59,6 +63,13 @@ export default function Home() {
       handleUrlSubmit(youtubeUrl);
     }
   }, []);
+
+  // Add this useEffect for auto-scrolling
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   const handleUrlSubmit = async (inputUrl?: string) => {
     const urlToProcess = inputUrl || url;
@@ -76,6 +87,9 @@ export default function Home() {
     }
     
     setIsLoading(true);
+    setIsProcessingVideo(true);
+    setProcessingStatus('Initializing video processing...');
+    
     try {
       // First, get video info
       const response = await fetch('/api/video-info', {
@@ -102,6 +116,31 @@ export default function Home() {
       setMessages([]); // Clear previous messages when new video is loaded
       setHasVideo(true);
       setCurrentVideoUrl(urlToProcess);
+      
+      // Start processing with instant analysis
+      setProcessingStatus('Analyzing video content...');
+      const processResponse = await fetch('/api/process-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ youtubeUrl: urlToProcess }),
+      });
+
+      if (!processResponse.ok) {
+        throw new Error('Failed to process video content');
+      }
+
+      const processData = await processResponse.json();
+      
+      // Add initial analysis to chat
+      if (processData.initialAnalysis) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\nI'm continuing to process the video for more detailed insights. You can start asking questions now!`
+        }]);
+      }
+
       toast({
         title: "Video processed!",
         description: "You can now ask questions about the video.",
@@ -115,6 +154,8 @@ export default function Home() {
       });
     } finally {
       setIsLoading(false);
+      setIsProcessingVideo(false);
+      setProcessingStatus('');
     }
   };
 
@@ -399,6 +440,15 @@ export default function Home() {
                 </div>
               </Card>
             )}
+
+            {isProcessingVideo && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <div className="bg-white p-6 rounded-lg shadow-lg text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#8b5cf6] mx-auto mb-4"></div>
+                  <p className="text-[#1a1a1a] font-medium">{processingStatus}</p>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Chat Interface Column */}
@@ -471,7 +521,7 @@ export default function Home() {
                   </div>
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col-reverse">
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={chatContainerRef}>
                     <div className="space-y-4">
                       {messages.map((message, index) => (
                         <div
@@ -502,6 +552,7 @@ export default function Home() {
                           </div>
                         </div>
                       ))}
+                      <div ref={messagesEndRef} />
                     </div>
                   </div>
 
