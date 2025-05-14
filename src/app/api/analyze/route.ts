@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getVideoInfo, extractVideoId } from '@/lib/youtube';
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Initialize Gemini with proper error handling
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY is not set in environment variables');
+}
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +30,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get video info, transcript, and vision analysis
+    // Get video info and transcript
     const videoInfo = await getVideoInfo(videoId);
 
     // Create a streaming response
@@ -33,10 +38,13 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
           
-          const analysisPrompt = videoInfo.hasTranscript
-            ? `Based on the following video transcript and the user's question, provide a detailed response:
+          let result;
+          if (videoInfo.hasTranscript) {
+            // Use transcript for analysis
+            result = await model.generateContent(
+              `Based on the following video transcript and the user's question, provide a detailed response:
               Title: ${videoInfo.title}
               Description: ${videoInfo.description}
               Transcript: ${videoInfo.transcript}
@@ -47,19 +55,20 @@ export async function POST(request: Request) {
               2. References specific parts of the transcript when relevant
               3. Maintains a professional and helpful tone
               4. Includes context and explanations where needed`
-            : `Based on the following video metadata and the user's question, provide a detailed response:
-              Title: ${videoInfo.title}
-              Description: ${videoInfo.description}
-              User Question: ${prompt}
-              
-              Please provide a comprehensive answer that:
-              1. Directly addresses the user's question
-              2. Uses the available metadata to provide context
-              3. Maintains a professional and helpful tone
-              4. Includes explanations where needed
-              Note: This response is based on video metadata as no transcript is available.`;
+            );
+          } else {
+            // Use direct YouTube URL analysis
+            result = await model.generateContent([
+              `Based on the video content, please answer the following question:\n${prompt}\n\nPlease provide a comprehensive answer that:\n1. Directly addresses the question\n2. References specific parts of the video when relevant\n3. Maintains a professional and helpful tone\n4. Includes context and explanations where needed`,
+              {
+                fileData: {
+                  fileUri: youtubeUrl,
+                  mimeType: 'video/youtube'
+                }
+              }
+            ]);
+          }
 
-          const result = await model.generateContent(analysisPrompt);
           const response = result.response.text();
           
           // Send the response in chunks
@@ -72,7 +81,7 @@ export async function POST(request: Request) {
           controller.close();
         } catch (error) {
           console.error('Error generating response:', error);
-          controller.enqueue(encoder.encode('Error generating response. Please try again.'));
+          controller.enqueue(encoder.encode(`Error: ${error instanceof Error ? error.message : 'Failed to generate response. Please try again.'}`));
           controller.close();
         }
       }

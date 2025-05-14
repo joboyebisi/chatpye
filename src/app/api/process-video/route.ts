@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getVideoInfo, extractVideoId } from '@/lib/youtube';
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Initialize Gemini with proper error handling
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY is not set in environment variables');
+}
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Simple in-memory cache (replace with Redis or similar in production)
 const videoCache = new Map();
@@ -38,7 +43,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get video info, transcript, and vision analysis
+    // Get video info and transcript
     const videoInfo = await getVideoInfo(videoId);
 
     // Return video info immediately
@@ -46,7 +51,7 @@ export async function POST(request: Request) {
       status: 'processing',
       message: videoInfo.hasTranscript 
         ? 'Initial analysis complete using video transcript'
-        : 'Initial analysis complete using video metadata',
+        : 'Initial analysis complete using video content analysis',
       hasTranscript: videoInfo.hasTranscript,
       videoInfo: {
         title: videoInfo.title,
@@ -58,10 +63,13 @@ export async function POST(request: Request) {
 
     // Start analysis in the background
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
       
-      const prompt = videoInfo.hasTranscript
-        ? `Analyze this YouTube video transcript and provide key insights:
+      let result;
+      if (videoInfo.hasTranscript) {
+        // Use transcript for analysis
+        result = await model.generateContent(
+          `Analyze this YouTube video transcript and provide key insights:
           Title: ${videoInfo.title}
           Description: ${videoInfo.description}
           Transcript: ${videoInfo.transcript}
@@ -71,18 +79,20 @@ export async function POST(request: Request) {
           2. Key points
           3. Technical concepts (if any)
           4. Potential questions users might ask`
-        : `Analyze this YouTube video based on its metadata:
-          Title: ${videoInfo.title}
-          Description: ${videoInfo.description}
-          
-          Please provide:
-          1. Main topics covered (based on metadata)
-          2. Key points that might be discussed
-          3. Technical concepts that might be covered
-          4. Potential questions users might ask
-          Note: This analysis is based on video metadata as no transcript is available.`;
+        );
+      } else {
+        // Use direct YouTube URL analysis
+        result = await model.generateContent([
+          "Please analyze this video and provide key insights. Include:\n1. Main topics covered\n2. Key points\n3. Technical concepts (if any)\n4. Potential questions users might ask",
+          {
+            fileData: {
+              fileUri: youtubeUrl,
+              mimeType: 'video/youtube'
+            }
+          }
+        ]);
+      }
 
-      const result = await model.generateContent(prompt);
       const analysis = result.response.text();
 
       // Cache the analysis
@@ -99,7 +109,11 @@ export async function POST(request: Request) {
     } catch (analysisError) {
       console.error('Error in analysis:', analysisError);
       // Still return video info even if analysis fails
-      return NextResponse.json(response);
+      return NextResponse.json({
+        ...response,
+        error: 'Failed to generate analysis. Please try again.',
+        details: analysisError instanceof Error ? analysisError.message : 'Unknown error'
+      });
     }
   } catch (error) {
     console.error('Error processing video:', error);
