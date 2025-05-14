@@ -716,17 +716,13 @@ export default function Home() {
                                 : 'bg-gray-100 text-[#1a1a1a]'
                             }`}
                           >
-                            {message.isStreaming ? (
-                              <div className="space-y-2">
-                                {renderMessage({ ...message, content: currentStreamingMessage })}
-                                <div className="flex space-x-1">
-                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
-                                </div>
+                            {renderMessage(message)}
+                            {isLoading && index === messages.length - 1 && message.role === 'assistant' && (
+                              <div className="flex space-x-1 mt-2">
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
                               </div>
-                            ) : (
-                              renderMessage(message)
                             )}
                           </div>
                         </div>
