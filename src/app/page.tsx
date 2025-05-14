@@ -49,6 +49,9 @@ export default function Home() {
   const { toast } = useToast();
   const [isProcessingVideo, setIsProcessingVideo] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
+  const [videoAnalysis, setVideoAnalysis] = useState<string | null>(null);
+  const [isAnalysisComplete, setIsAnalysisComplete] = useState(false);
+  const [showConnectionStatus, setShowConnectionStatus] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +66,17 @@ export default function Home() {
       handleUrlSubmit(youtubeUrl);
     }
   }, []);
+
+  // Add useEffect to handle connection status
+  useEffect(() => {
+    if (user) {
+      setShowConnectionStatus(true);
+      const timer = setTimeout(() => {
+        setShowConnectionStatus(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
 
   // Add this useEffect for auto-scrolling
   useEffect(() => {
@@ -89,10 +103,12 @@ export default function Home() {
     setIsLoading(true);
     setIsProcessingVideo(true);
     setProcessingStatus('Initializing video processing...');
+    setVideoAnalysis(null);
+    setIsAnalysisComplete(false);
     
     try {
       // First, get video info
-      const response = await fetch('/api/video-info', {
+      const response = await fetch(`${window.location.origin}/api/video-info`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,7 +135,7 @@ export default function Home() {
       
       // Start processing with instant analysis
       setProcessingStatus('Analyzing video content...');
-      const processResponse = await fetch('/api/process-video', {
+      const processResponse = await fetch(`${window.location.origin}/api/process-video`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -133,11 +149,15 @@ export default function Home() {
 
       const processData = await processResponse.json();
       
+      // Store the analysis for future use
+      setVideoAnalysis(processData.initialAnalysis);
+      setIsAnalysisComplete(true);
+      
       // Add initial analysis to chat
       if (processData.initialAnalysis) {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\nI'm continuing to process the video for more detailed insights. You can start asking questions now!`
+          content: `Here's my initial analysis of the video:\n\n${processData.initialAnalysis}\n\nI'm ready to answer your questions about this video!`
         }]);
       }
 
@@ -179,8 +199,22 @@ export default function Home() {
         throw new Error('No video URL provided. Please enter a YouTube URL first.');
       }
 
-      // Make API request
-      const response = await fetch('/api/analyze', {
+      // Check if we have cached analysis and the question is about general content
+      const generalQuestions = ['what is this video about', 'summarize', 'explain', 'overview', 'main points'];
+      const isGeneralQuestion = generalQuestions.some(q => message.toLowerCase().includes(q));
+      
+      if (isGeneralQuestion && videoAnalysis) {
+        // Use cached analysis for general questions
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Based on my analysis:\n\n${videoAnalysis}`
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Make API request for specific questions
+      const response = await fetch(`${window.location.origin}/api/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -308,6 +342,22 @@ export default function Home() {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#f5f4f9] relative font-['Inter',_sans-serif] text-base text-[#1a1a1a]">
+      {/* Connection Status Toast */}
+      {showConnectionStatus && (
+        <div className="fixed top-4 right-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg p-4 flex items-center gap-2 border border-[#8b5cf6]">
+            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+            <span className="text-sm text-[#1a1a1a]">Connected</span>
+            <button 
+              onClick={() => setShowConnectionStatus(false)}
+              className="ml-2 text-[#666666] hover:text-[#1a1a1a]"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Navigation Bar */}
       <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm py-3 px-6 relative z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -368,7 +418,7 @@ export default function Home() {
                 <Input
                   type="text"
                   placeholder="Paste YouTube URL to start learning"
-                  className="flex-1 border-0 focus-visible:ring-0 bg-transparent text-[#1a1a1a] placeholder:text-[#666666]"
+                  className="flex-1 border-0 focus-visible:ring-0 bg-transparent text-[#1a1a1a] placeholder:text-[#666666] select-text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
@@ -443,9 +493,10 @@ export default function Home() {
 
             {isProcessingVideo && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="bg-white p-6 rounded-lg shadow-lg text-center">
+                <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-md">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#8b5cf6] mx-auto mb-4"></div>
-                  <p className="text-[#1a1a1a] font-medium">{processingStatus}</p>
+                  <p className="text-[#1a1a1a] font-medium mb-2">{processingStatus}</p>
+                  <p className="text-sm text-[#666666]">This may take a few moments. You'll be able to ask questions once processing is complete.</p>
                 </div>
               </div>
             )}
@@ -562,21 +613,21 @@ export default function Home() {
                       <Input 
                         type="text" 
                         placeholder="Chat with video..."
-                        className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666]"
+                        className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666] select-text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && inputMessage.trim() && url) {
+                          if (e.key === 'Enter' && inputMessage.trim() && hasVideo) {
                             handleSendMessage(inputMessage);
                           }
                         }}
-                        disabled={isLoading}
+                        disabled={!hasVideo || isLoading}
                       />
                       <Button 
                         size="icon" 
                         className="rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                         onClick={() => handleSendMessage(inputMessage)}
-                        disabled={isSendButtonDisabled}
+                        disabled={!hasVideo || isLoading || !inputMessage.trim()}
                       >
                         <Send className="h-4 w-4" />
                       </Button>
@@ -616,4 +667,14 @@ export default function Home() {
       <Toaster />
     </div>
   );
+}
+
+// Add type for Toaster props
+interface ToasterProps {
+  position?: 'top-right' | 'top-center' | 'top-left' | 'bottom-right' | 'bottom-center' | 'bottom-left';
+  toastOptions?: {
+    className?: string;
+    duration?: number;
+    style?: React.CSSProperties;
+  };
 }
