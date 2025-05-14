@@ -9,12 +9,19 @@ if (!process.env.GOOGLE_API_KEY) {
 // Initialize the API
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
-// Helper function to handle rate limits
-async function handleRateLimit(error: any) {
+// Helper function to handle rate limits with exponential backoff
+async function handleRateLimit(error: any, attempt: number = 1): Promise<boolean> {
   if (error.status === 429) {
-    const retryDelay = error.errorDetails?.[2]?.retryDelay || '10s';
+    const maxAttempts = 5;
+    if (attempt > maxAttempts) {
+      throw new Error('Maximum retry attempts reached. Please try again later.');
+    }
+
+    // Get retry delay from error or use exponential backoff
+    const retryDelay = error.errorDetails?.[2]?.retryDelay || `${Math.min(30 * Math.pow(2, attempt - 1), 300)}s`;
     const delayMs = parseInt(retryDelay) * 1000;
-    console.log(`Rate limit hit, waiting ${retryDelay} before retrying...`);
+    
+    console.log(`Rate limit hit (attempt ${attempt}/${maxAttempts}), waiting ${retryDelay} before retrying...`);
     await new Promise(resolve => setTimeout(resolve, delayMs));
     return true;
   }
@@ -99,14 +106,16 @@ export async function analyzeVideo(youtubeUrl: string, prompt: string) {
 
     // Start the analysis in the background
     (async () => {
-      try {
-        const result = await model.generateContentStream({
-          contents: [{
-            role: 'user',
-            parts: [
-              {
-                text: `You are an AI tutor analyzing a YouTube video. Please analyze the following video and provide a detailed response to: ${prompt}
-                
+      let attempt = 1;
+      while (attempt <= 5) {
+        try {
+          const result = await model.generateContentStream({
+            contents: [{
+              role: 'user',
+              parts: [
+                {
+                  text: `You are an AI tutor analyzing a YouTube video. Please analyze the following video and provide a detailed response to: ${prompt}
+                  
 Guidelines:
 - Be concise but informative
 - Use bullet points for key points
@@ -114,40 +123,52 @@ Guidelines:
 - Format code blocks with proper syntax highlighting
 - If you're unsure about something, acknowledge it
 - Keep the response focused on the video content`
-              },
-              {
-                fileData: {
-                  fileUri: youtubeUrl,
-                  mimeType: 'video/mp4'
+                },
+                {
+                  fileData: {
+                    fileUri: youtubeUrl,
+                    mimeType: 'video/mp4'
+                  }
                 }
-              }
-            ]
-          }]
-        });
+              ]
+            }]
+          });
 
-        for await (const chunk of result.stream) {
-          const text = chunk.text();
-          if (text) {
-            fullAnalysis += text;
-            await writer.write(new TextEncoder().encode(text));
+          for await (const chunk of result.stream) {
+            const text = chunk.text();
+            if (text) {
+              fullAnalysis += text;
+              await writer.write(new TextEncoder().encode(text));
+            }
           }
-        }
 
-        // Save to cache after successful analysis
-        await saveToCache(videoId, prompt, fullAnalysis);
-      } catch (error: any) {
-        console.error('Error in Gemini analysis:', error);
-        
-        // Handle rate limits
-        if (error.message?.includes('rate limit')) {
-          await writer.write(new TextEncoder().encode('Rate limit exceeded. Please try again in a few minutes.'));
-        } else {
+          // Save to cache after successful analysis
+          await saveToCache(videoId, prompt, fullAnalysis);
+          break; // Success, exit the retry loop
+        } catch (error: any) {
+          console.error(`Attempt ${attempt} failed:`, error);
+          
+          // Handle rate limits
+          if (error.status === 429) {
+            const shouldRetry = await handleRateLimit(error, attempt);
+            if (shouldRetry) {
+              attempt++;
+              continue;
+            }
+          }
+
+          // For other errors or if we shouldn't retry
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           await writer.write(new TextEncoder().encode(`Error: ${errorMessage}`));
+          break;
         }
-      } finally {
-        await writer.close();
       }
+
+      if (attempt > 5) {
+        await writer.write(new TextEncoder().encode('Maximum retry attempts reached. Please try again later.'));
+      }
+
+      await writer.close();
     })();
 
     return stream.readable;
