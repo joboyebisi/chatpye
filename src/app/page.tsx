@@ -191,15 +191,13 @@ export default function Home() {
     setInputMessage('');
 
     try {
-      // Show loading state
       setIsLoading(true);
 
-      // Get the YouTube URL from the current video URL
       if (!currentVideoUrl) {
-        throw new Error('No video URL provided. Please enter a YouTube URL first.');
+        throw new Error('No video URL provided');
       }
 
-      // Make API request for specific questions
+      // Make API call to analyze endpoint
       const response = await fetch(`${window.location.origin}/api/analyze`, {
         method: 'POST',
         headers: {
@@ -213,57 +211,42 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze video');
+        throw new Error(errorData.details || 'Failed to analyze video');
       }
 
-      // Create a new message for the assistant's response
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: '',
-      };
+      // Add assistant message to chat
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-      // Add the message to the chat
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // Read the stream
+      // Handle streaming response
       const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response stream available');
-      }
+      if (!reader) throw new Error('No response stream available');
 
-      // Read the stream
+      const decoder = new TextDecoder();
+      let assistantMessage = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Convert the chunk to text
-        const text = new TextDecoder().decode(value);
-        
-        // Update the assistant's message
+        const chunk = decoder.decode(value);
+        assistantMessage += chunk;
+
+        // Update the last message in chat
         setMessages(prev => {
           const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage.role === 'assistant') {
-            lastMessage.content += text;
-          }
+          newMessages[newMessages.length - 1].content = assistantMessage;
           return newMessages;
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
-      
-      // Show error toast
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to analyze video',
-        variant: 'destructive',
-      });
-
-      // Add error message to chat
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `I apologize, but I encountered an error: ${error.message || 'Failed to analyze video'}. Please try again or try a different video.`
-      }]);
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Error: ${error instanceof Error ? error.message : 'Failed to process your request'}`,
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }

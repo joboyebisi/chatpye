@@ -21,10 +21,11 @@ export async function POST(request: Request) {
 
     // Check cache first
     if (videoCache.has(youtubeUrl)) {
+      const cachedData = videoCache.get(youtubeUrl);
       return NextResponse.json({
         status: 'completed',
         message: 'Video analysis retrieved from cache',
-        analysis: videoCache.get(youtubeUrl)
+        ...cachedData
       });
     }
 
@@ -40,49 +41,12 @@ export async function POST(request: Request) {
     // Get video info, transcript, and vision analysis
     const videoInfo = await getVideoInfo(videoId);
 
-    // Start instant analysis with Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
-    // Generate initial analysis based on available data
-    const prompt = videoInfo.hasTranscript
-      ? `Analyze this YouTube video transcript and provide key insights:
-        Title: ${videoInfo.title}
-        Description: ${videoInfo.description}
-        Transcript: ${videoInfo.transcript}
-        
-        Please provide:
-        1. Main topics covered
-        2. Key points
-        3. Technical concepts (if any)
-        4. Potential questions users might ask`
-      : `Analyze this YouTube video based on the vision analysis and metadata:
-        Title: ${videoInfo.title}
-        Description: ${videoInfo.description}
-        Vision Analysis: ${videoInfo.visionAnalysis}
-        
-        Please provide:
-        1. Main topics covered (based on vision analysis and metadata)
-        2. Key points that were identified
-        3. Technical concepts that were shown
-        4. Potential questions users might ask
-        Note: This analysis is based on video content analysis and metadata as no transcript is available.`;
-
-    const result = await model.generateContent(prompt);
-    const analysis = result.response.text();
-
-    // Cache the analysis
-    videoCache.set(youtubeUrl, {
-      analysis,
-      videoInfo,
-      timestamp: Date.now()
-    });
-
-    return NextResponse.json({ 
+    // Return video info immediately
+    const response = {
       status: 'processing',
       message: videoInfo.hasTranscript 
         ? 'Initial analysis complete using video transcript'
-        : 'Initial analysis complete using video content analysis',
-      initialAnalysis: analysis,
+        : 'Initial analysis complete using video metadata',
       hasTranscript: videoInfo.hasTranscript,
       videoInfo: {
         title: videoInfo.title,
@@ -90,11 +54,60 @@ export async function POST(request: Request) {
         views: videoInfo.views,
         publishedAt: videoInfo.publishedAt
       }
-    });
+    };
+
+    // Start analysis in the background
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      
+      const prompt = videoInfo.hasTranscript
+        ? `Analyze this YouTube video transcript and provide key insights:
+          Title: ${videoInfo.title}
+          Description: ${videoInfo.description}
+          Transcript: ${videoInfo.transcript}
+          
+          Please provide:
+          1. Main topics covered
+          2. Key points
+          3. Technical concepts (if any)
+          4. Potential questions users might ask`
+        : `Analyze this YouTube video based on its metadata:
+          Title: ${videoInfo.title}
+          Description: ${videoInfo.description}
+          
+          Please provide:
+          1. Main topics covered (based on metadata)
+          2. Key points that might be discussed
+          3. Technical concepts that might be covered
+          4. Potential questions users might ask
+          Note: This analysis is based on video metadata as no transcript is available.`;
+
+      const result = await model.generateContent(prompt);
+      const analysis = result.response.text();
+
+      // Cache the analysis
+      videoCache.set(youtubeUrl, {
+        ...response,
+        initialAnalysis: analysis,
+        timestamp: Date.now()
+      });
+
+      return NextResponse.json({
+        ...response,
+        initialAnalysis: analysis
+      });
+    } catch (analysisError) {
+      console.error('Error in analysis:', analysisError);
+      // Still return video info even if analysis fails
+      return NextResponse.json(response);
+    }
   } catch (error) {
     console.error('Error processing video:', error);
     return NextResponse.json(
-      { error: 'Failed to process video' },
+      { 
+        error: 'Failed to process video',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

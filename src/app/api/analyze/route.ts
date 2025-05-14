@@ -30,63 +30,67 @@ export async function POST(request: Request) {
 
     // Create a streaming response
     const encoder = new TextEncoder();
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+          
+          const analysisPrompt = videoInfo.hasTranscript
+            ? `Based on the following video transcript and the user's question, provide a detailed response:
+              Title: ${videoInfo.title}
+              Description: ${videoInfo.description}
+              Transcript: ${videoInfo.transcript}
+              User Question: ${prompt}
+              
+              Please provide a comprehensive answer that:
+              1. Directly addresses the user's question
+              2. References specific parts of the transcript when relevant
+              3. Maintains a professional and helpful tone
+              4. Includes context and explanations where needed`
+            : `Based on the following video metadata and the user's question, provide a detailed response:
+              Title: ${videoInfo.title}
+              Description: ${videoInfo.description}
+              User Question: ${prompt}
+              
+              Please provide a comprehensive answer that:
+              1. Directly addresses the user's question
+              2. Uses the available metadata to provide context
+              3. Maintains a professional and helpful tone
+              4. Includes explanations where needed
+              Note: This response is based on video metadata as no transcript is available.`;
 
-    // Start the analysis in the background
-    (async () => {
-      try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-        
-        const analysisPrompt = videoInfo.hasTranscript
-          ? `Analyze this YouTube video transcript based on the user's question:
-            Title: ${videoInfo.title}
-            Description: ${videoInfo.description}
-            Transcript: ${videoInfo.transcript}
-            
-            User's Question: ${prompt}
-            
-            Please provide a detailed analysis that:
-            1. Directly addresses the user's question
-            2. Uses specific examples from the transcript
-            3. Provides context and explanations
-            4. Maintains a professional but engaging tone`
-          : `Analyze this YouTube video based on the user's question:
-            Title: ${videoInfo.title}
-            Description: ${videoInfo.description}
-            Vision Analysis: ${videoInfo.visionAnalysis}
-            
-            User's Question: ${prompt}
-            
-            Please provide a detailed analysis that:
-            1. Directly addresses the user's question based on the video content analysis
-            2. Uses specific examples from the vision analysis
-            3. Provides context and explanations
-            4. Maintains a professional but engaging tone
-            Note: This analysis is based on video content analysis as no transcript is available.`;
-
-        const result = await model.generateContent(analysisPrompt);
-        const analysis = result.response.text();
-        
-        await writer.write(encoder.encode(analysis));
-        await writer.close();
-      } catch (error) {
-        console.error('Error in analysis:', error);
-        await writer.write(encoder.encode('Error analyzing video. Please try again.'));
-        await writer.close();
+          const result = await model.generateContent(analysisPrompt);
+          const response = result.response.text();
+          
+          // Send the response in chunks
+          const chunks = response.split('\n');
+          for (const chunk of chunks) {
+            controller.enqueue(encoder.encode(chunk + '\n'));
+            await new Promise(resolve => setTimeout(resolve, 50)); // Add small delay between chunks
+          }
+          
+          controller.close();
+        } catch (error) {
+          console.error('Error generating response:', error);
+          controller.enqueue(encoder.encode('Error generating response. Please try again.'));
+          controller.close();
+        }
       }
-    })();
+    });
 
-    return new Response(stream.readable, {
+    return new Response(stream, {
       headers: {
-        'Content-Type': 'text/plain',
+        'Content-Type': 'text/plain; charset=utf-8',
         'Transfer-Encoding': 'chunked'
       }
     });
   } catch (error) {
     console.error('Error in analyze route:', error);
     return NextResponse.json(
-      { error: 'Failed to analyze video' },
+      { 
+        error: 'Failed to analyze video',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
