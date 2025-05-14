@@ -2,19 +2,22 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getVideoInfo, extractVideoId } from '@/lib/youtube';
 
-// Initialize Gemini with proper error handling
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not set in environment variables');
-}
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // Simple in-memory cache (replace with Redis or similar in production)
 const videoCache = new Map();
 
 export async function POST(request: Request) {
   try {
+    // Check for API key
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is not set in environment variables' },
+        { status: 500 }
+      );
+    }
+
     const { youtubeUrl } = await request.json();
 
     if (!youtubeUrl) {
@@ -46,7 +49,7 @@ export async function POST(request: Request) {
     // Get video info and transcript
     const videoInfo = await getVideoInfo(videoId);
 
-    // Return video info immediately
+    // Always return video info immediately
     const response = {
       status: 'processing',
       message: videoInfo.hasTranscript 
