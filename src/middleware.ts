@@ -2,14 +2,38 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  // Get the hostname (e.g. chatpye.com, app.chatpye.com)
+  const url = request.nextUrl;
   const hostname = request.headers.get('host') || '';
   
-  // If we're on the main domain, redirect to the app subdomain
+  // Handle chatpyeyoutube.com redirects
+  if (hostname.includes('chatpyeyoutube.com')) {
+    const path = url.pathname;
+    const searchParams = url.searchParams;
+    
+    // Extract video ID from various formats
+    let videoId = searchParams.get('v');
+    
+    if (!videoId) {
+      const pathParts = path.split('/').filter(Boolean);
+      if (pathParts.length > 0) {
+        if (pathParts[0] === 'v' && pathParts[1]) {
+          videoId = pathParts[1];
+        } else if (pathParts[0].startsWith('watch')) {
+          videoId = pathParts[0].replace('watch', '');
+        } else {
+          videoId = pathParts[0];
+        }
+      }
+    }
+
+    if (videoId) {
+      return NextResponse.redirect(`https://app.chatpye.com?videoId=${videoId}`);
+    }
+  }
+
+  // Handle chatpye.com redirect to app.chatpye.com
   if (hostname === 'chatpye.com') {
-    const url = request.nextUrl.clone();
-    url.host = 'app.chatpye.com';
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(`https://app.chatpye.com${url.pathname}${url.search}`);
   }
 
   return NextResponse.next();
