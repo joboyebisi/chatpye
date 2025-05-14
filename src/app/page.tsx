@@ -280,6 +280,7 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
+    setHasVideo(false); // Reset video state
 
     try {
       const response = await fetch('/api/process-video', {
@@ -307,12 +308,15 @@ export default function Home() {
 
       setVideoInfo({
         id: videoId,
-        title: data.videoInfo.title,
-        description: data.videoInfo.description,
-        views: data.videoInfo.views,
-        publishedAt: data.videoInfo.publishedAt,
+        title: data.videoInfo.title || 'Untitled Video',
+        description: data.videoInfo.description || 'No description available',
+        views: data.videoInfo.views || '0 views',
+        publishedAt: data.videoInfo.publishedAt || new Date().toISOString(),
         url: urlToProcess
       });
+
+      setHasVideo(true); // Enable chat after video is loaded
+      setCurrentVideoUrl(urlToProcess); // Set current video URL for chat
 
       toast({
         title: "Video processed successfully",
@@ -687,7 +691,7 @@ export default function Home() {
                     <div className="flex items-center gap-2">
                       <Input 
                         type="text" 
-                        placeholder="Chat with video..."
+                        placeholder={hasVideo ? "Chat with video..." : "Process a video first..."}
                         className="flex-1 rounded-lg bg-white border-gray-200 text-[#1a1a1a] placeholder:text-[#666666] select-text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
@@ -700,13 +704,18 @@ export default function Home() {
                       />
                       <Button 
                         size="icon" 
-                        className="rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
+                        className="rounded-lg bg-[#8b5cf6] text-white hover:bg-[#7c3aed] disabled:opacity-50"
                         onClick={() => handleSendMessage(inputMessage)}
                         disabled={!hasVideo || isLoading || !inputMessage.trim()}
                       >
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
+                    {!hasVideo && (
+                      <p className="text-sm text-[#666666] mt-2 text-center">
+                        Enter a YouTube URL above to start chatting
+                      </p>
+                    )}
                   </div>
                 </TabsContent>
 

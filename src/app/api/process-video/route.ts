@@ -79,7 +79,13 @@ export async function POST(request: Request) {
         "description": "string",
         "views": "string",
         "publishedAt": "string"
-      }`,
+      }
+      
+      If any field is not available, use a default value:
+      - For title: "Untitled Video"
+      - For description: "No description available"
+      - For views: "0 views"
+      - For publishedAt: Current date in ISO format`,
       {
         fileData: {
           fileUri: youtubeUrl,
@@ -93,16 +99,22 @@ export async function POST(request: Request) {
       const responseText = metadataResult.response.text();
       videoInfo = JSON.parse(responseText);
       
-      // Validate required fields
-      if (!videoInfo.title || !videoInfo.description || !videoInfo.views || !videoInfo.publishedAt) {
-        throw new Error('Missing required video information');
-      }
+      // Ensure all fields have values
+      videoInfo = {
+        title: videoInfo.title || 'Untitled Video',
+        description: videoInfo.description || 'No description available',
+        views: videoInfo.views || '0 views',
+        publishedAt: videoInfo.publishedAt || new Date().toISOString()
+      };
     } catch (parseError) {
       console.error('Error parsing video metadata:', parseError);
-      return NextResponse.json(
-        { error: 'Failed to extract video information' },
-        { status: 500 }
-      );
+      // Provide default values if parsing fails
+      videoInfo = {
+        title: 'Untitled Video',
+        description: 'No description available',
+        views: '0 views',
+        publishedAt: new Date().toISOString()
+      };
     }
 
     // Return video info immediately
