@@ -471,36 +471,38 @@ export default function Home() {
                   </div>
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {messages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`flex ${
-                          message.role === 'user' ? 'justify-end' : 'justify-start'
-                        }`}
-                      >
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col-reverse">
+                    <div className="space-y-4">
+                      {messages.map((message, index) => (
                         <div
-                          className={`max-w-[80%] rounded-lg p-3 ${
-                            message.role === 'user'
-                              ? 'bg-[#8b5cf6] text-white'
-                              : 'bg-gray-100 text-[#1a1a1a]'
+                          key={index}
+                          className={`flex ${
+                            message.role === 'user' ? 'justify-end' : 'justify-start'
                           }`}
                         >
-                          {message.isStreaming ? (
-                            <div className="space-y-2">
-                              {renderMessage({ ...message, content: currentStreamingMessage })}
-                              <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                          <div
+                            className={`max-w-[80%] rounded-lg p-3 ${
+                              message.role === 'user'
+                                ? 'bg-[#8b5cf6] text-white'
+                                : 'bg-gray-100 text-[#1a1a1a]'
+                            }`}
+                          >
+                            {message.isStreaming ? (
+                              <div className="space-y-2">
+                                {renderMessage({ ...message, content: currentStreamingMessage })}
+                                <div className="flex space-x-1">
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            renderMessage(message)
-                          )}
+                            ) : (
+                              renderMessage(message)
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
 
                   {/* Input area */}
